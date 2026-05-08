@@ -1,0 +1,9 @@
+{
+  "name": "ai-cca-root",
+  "private": true,
+  "scripts": {
+    "install-deps": "cd lumina-os && npm install",
+    "build": "cd lumina-os && npm run build",
+    "dev": "cd lumina-os && npm run dev"
+  }
+}

@@ -20,7 +20,7 @@ import { Hands } from '@mediapipe/hands';
 import { Camera } from '@mediapipe/camera_utils';
 
 // --- Constants & Commands ---
-const BACKEND_URL = "http://localhost:8000/api";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "/api";
 
 const COMMANDS = {
   YOUTUBE: 'https://www.youtube.com',
