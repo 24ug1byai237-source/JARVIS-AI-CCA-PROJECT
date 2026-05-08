@@ -437,14 +437,28 @@ const HardwareMonitor = () => {
   const [stats, setStats] = useState({ cpu: 45, gpu: 32, ram: 58, temp: 42 });
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setStats({
-        cpu: Math.floor(30 + Math.random() * 40),
-        gpu: Math.floor(20 + Math.random() * 50),
-        ram: Math.floor(50 + Math.random() * 10),
-        temp: Math.floor(38 + Math.random() * 12)
-      });
-    }, 2000);
+    const fetchStats = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/system/status`);
+        const data = await res.json();
+        setStats(prev => ({
+          ...prev,
+          cpu: Math.round(data.cpu),
+          ram: Math.round(data.ram),
+          temp: Math.round(data.temp),
+          battery: Math.round(data.battery)
+        }));
+      } catch (e) {
+        // Fallback to random if backend fails
+        setStats(prev => ({
+          cpu: Math.floor(30 + Math.random() * 40),
+          gpu: Math.floor(20 + Math.random() * 50),
+          ram: Math.floor(50 + Math.random() * 10),
+          temp: Math.floor(38 + Math.random() * 12)
+        }));
+      }
+    };
+    const interval = setInterval(fetchStats, 2000);
     return () => clearInterval(interval);
   }, []);
 
@@ -469,7 +483,7 @@ const HardwareMonitor = () => {
       <Bar label="NEURAL-CPU" val={stats.cpu} color="#22d3ee" />
       <Bar label="CORE-TEMP" val={stats.temp} color="#f43f5e" />
       <Bar label="VISION-GPU" val={stats.gpu} color="#a78bfa" />
-      <Bar label="BUFFER-RAM" val={stats.ram} color="#10b981" />
+      <Bar label="NEURAL-BATTERY" val={stats.battery || 100} color="#10b981" />
     </div>
   );
 };
@@ -641,15 +655,17 @@ export default function App() {
 
   const isProcessingRef = useRef(false);
   const previousCommandRef = useRef('');
+  const lastProcessedTimeRef = useRef(0);
 
   // Voice Recognition Setup
   const recognition = useMemo(() => {
     if (!window.webkitSpeechRecognition && !window.SpeechRecognition) return null;
     const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
     const rec = new SpeechRecognition();
-    rec.continuous = true; // Stay on for better "JARVIS" feel
-    rec.interimResults = true; // Real-time feedback
+    rec.continuous = true; 
+    rec.interimResults = true; 
     rec.lang = 'en-US';
+    rec.maxAlternatives = 1; // Reduce processing for speed
     return rec;
   }, []);
 
@@ -659,25 +675,42 @@ export default function App() {
     recognition.onresult = (event) => {
       let interim = "";
       for (let i = event.resultIndex; i < event.results.length; ++i) {
+        const transcript = event.results[i][0].transcript.toLowerCase().trim();
+        
         if (event.results[i].isFinal) {
-          const command = event.results[i][0].transcript.toLowerCase().trim();
+          const command = transcript;
           
-          // Debounce same command
-          if (isProcessingRef.current || command === previousCommandRef.current) return;
+          // Improved Debounce/Repetition Prevention
+          const now = Date.now();
+          if (isProcessingRef.current && now - lastProcessedTimeRef.current < 1500) return;
+          if (command === previousCommandRef.current && now - lastProcessedTimeRef.current < 3000) return;
           
-          previousCommandRef.current = command;
-          isProcessingRef.current = true;
-          setInterimText(""); // Clear interim on final
+          // Check for Wake Word "Jarvis"
+          const hasWakeWord = command.includes("jarvis");
+          const cleanCommand = command.replace(/jarvis/g, "").trim();
           
-          addLog(`> ${command.toUpperCase()}`);
-          handleVoiceCommand(command);
-          
-          setTimeout(() => { 
-            isProcessingRef.current = false; 
-            previousCommandRef.current = ''; 
-          }, 3000);
+          if (hasWakeWord || isListening) {
+             previousCommandRef.current = command;
+             lastProcessedTimeRef.current = now;
+             isProcessingRef.current = true;
+             setInterimText(""); 
+             
+             addLog(`> ${command.toUpperCase()}`);
+             handleVoiceCommand(cleanCommand || command);
+             
+             setTimeout(() => { 
+               isProcessingRef.current = false; 
+             }, 800); 
+          }
         } else {
           interim += event.results[i][0].transcript;
+          // Partial matching for "Stop" or "Shut up"
+          if (interim.toLowerCase().includes("stop jarvis") || interim.toLowerCase().includes("shut up")) {
+             window.speechSynthesis.cancel();
+             setIsPlaying(false);
+             setShowVideo(false);
+             setAiResponse("Understood, sir. Silencing all systems.");
+          }
         }
       }
       setInterimText(interim);
@@ -763,127 +796,123 @@ export default function App() {
   };
 
   const handleVoiceCommand = (cmd) => {
-    // --- APP & NAVIGATION ---
-    const match = (keys) => keys.some(k => cmd.includes(k));
+    const cleanCmd = cmd.toLowerCase().trim();
+    if (!cleanCmd) return;
 
-    if (match(['youtube'])) {
-      respond('Opening YouTube.', 'https://www.youtube.com');
-    } else if (match(['google', 'search'])) {
-      const query = cmd.split(/google|search/i)[1]?.trim();
-      if (query) {
-        respond(`Searching for ${query}.`, `https://www.google.com/search?q=${encodeURIComponent(query)}`);
-      } else {
-        respond('Opening Google.', 'https://www.google.com');
+    // --- QUICK ACTION ENGINE (ULTRA FAST) ---
+    const quickActions = {
+      '^stop$|^shut up$|^silence$': () => {
+        window.speechSynthesis.cancel();
+        setIsPlaying(false);
+        setShowVideo(false);
+        respond("Systems silenced.");
+        return true;
+      },
+      '^hello$|^hi$|^hey$|^jarvis$': () => {
+        const hour = new Date().getHours();
+        respond(hour < 12 ? "Good morning, sir." : hour < 18 ? "Good afternoon, sir." : "Good evening, sir.");
+        return true;
+      },
+      '^time$': () => { respond(`It is ${new Date().toLocaleTimeString()}.`); return true; },
+      '^screenshot$': () => { respond("Capturing screen."); fetch(`${BACKEND_URL}/system/screenshot`, { method: 'POST' }); return true; }
+    };
+
+    for (const [pattern, action] of Object.entries(quickActions)) {
+      if (new RegExp(pattern).test(cleanCmd)) {
+        if (action()) return;
       }
-    } else if (match(['spotify'])) {
-      respond('Launching Spotify.', 'https://open.spotify.com');
-    } else if (match(['github'])) {
-      respond('Accessing GitHub.', 'https://github.com');
-    } else if (match(['whatsapp', 'message', 'text'])) {
-      // Improved WhatsApp Logic
-      const contactName = Object.keys(CONTACTS).find(name => cmd.includes(name));
-      if (contactName) {
-        const phone = CONTACTS[contactName].replace('+', '');
-        const messageParts = cmd.split(contactName);
-        const text = messageParts.length > 1 ? messageParts[1].replace(/saying|say|message/i, '').trim() : '';
-        
-        if (text) {
-          respond(`Preparing message to ${contactName}: "${text}"`, `https://wa.me/${phone}?text=${encodeURIComponent(text)}`);
-        } else {
-          respond(`Opening chat with ${contactName}.`, `https://wa.me/${phone}`);
+    }
+
+    // --- ACCURACY ENGINE (REGEX BASED) ---
+    const match = (pattern) => new RegExp(pattern, 'i').test(cleanCmd);
+
+    // YouTube / Music
+    if (match('play (.*)')) {
+      const song = cleanCmd.match(/play (.*)/i)[1].replace(/on youtube|music/i, '').trim();
+      setMusicTrack(song.toUpperCase());
+      setIsPlaying(true);
+      setActiveSong(MUSIC_TRACKS[song.toUpperCase()] || song);
+      setShowVideo(true);
+      respond(`Initiating audio stream for ${song}.`);
+    }
+    // Apps
+    else if (match('open (notepad|calculator|settings|chrome|word|excel|task manager)')) {
+      const app = cleanCmd.match(/open (.*)/i)[1].trim();
+      respond(`Launching ${app}, sir.`);
+      fetch(`${BACKEND_URL}/system/open?app_name=${encodeURIComponent(app)}`, { method: 'POST' });
+    }
+    // WhatsApp
+    else if (match('(message|whatsapp|text) (.*)')) {
+      const parts = cleanCmd.match(/(?:message|whatsapp|text) (.*?) (?:saying|say) (.*)/i);
+      if (parts) {
+        const name = parts[1].trim();
+        const msg = parts[2].trim();
+        const contact = Object.keys(CONTACTS).find(c => name.includes(c));
+        if (contact) {
+          respond(`Messaging ${contact}: ${msg}`);
+          openInNewTab(`https://wa.me/${CONTACTS[contact].replace('+', '')}?text=${encodeURIComponent(msg)}`);
         }
       } else {
-        respond("Contact not found in neural database. Opening WhatsApp Web.", "https://web.whatsapp.com");
+        const namePart = cleanCmd.split(/message|whatsapp|text/i)[1]?.trim();
+        const contact = Object.keys(CONTACTS).find(c => namePart?.includes(c));
+        if (contact) {
+          respond(`Opening chat with ${contact}.`);
+          openInNewTab(`https://wa.me/${CONTACTS[contact].replace('+', '')}`);
+        }
       }
     }
-
-    // --- MEDIA CONTROL ---
-    else if (match(['play '])) {
-      const songName = cmd.split('play ')[1].trim();
-      if (songName) {
-        const upperSong = songName.toUpperCase();
-        const trackId = MUSIC_TRACKS[upperSong];
-        
-        setMusicTrack(songName.charAt(0).toUpperCase() + songName.slice(1));
-        setIsPlaying(true);
-        setActiveSong(trackId || songName);
-        setShowVideo(true);
-        
-        respond(`Initializing direct neural uplink for ${songName}. Auto-play engaged.`);
-        // Note: No second tab open for music to ensure holographic player has priority
-      }
-    } else if (match(['pause music', 'stop music', 'stop'])) {
-      respond('Terminating all audio transmissions.');
-      setIsPlaying(false);
-      setShowVideo(false);
-      setActiveSong(null);
-    }
-
-    // --- SYSTEM & HARDWARE ---
-    else if (match(['shutdown', 'turn off laptop'])) {
-      respond("System shutdown sequence initiated. All hardware components will power down in 5 seconds. Goodbye, sir.");
+    // System
+    else if (match('shutdown|power off')) {
+      respond("Shutdown sequence engaged. Goodbye, sir.");
       setSystemState('shutdown');
-      setTimeout(async () => {
-        try {
-          await fetch(`${BACKEND_URL}/system/shutdown`, { method: 'POST' });
-        } catch (e) {
-          addLog("System Error: Local hardware controller not responding.");
-        }
-      }, 5000);
-    } else if (match(['restart', 'reboot'])) {
-      respond("Rebooting JARVIS core and physical hardware.");
-      setSystemState('restarting');
-      setTimeout(async () => {
-        try {
-          await fetch(`${BACKEND_URL}/system/restart`, { method: 'POST' });
-        } catch (e) {
-          addLog("System Error: Local hardware controller not responding.");
-        }
-      }, 5000);
+      setTimeout(() => fetch(`${BACKEND_URL}/system/shutdown`, { method: 'POST' }), 3000);
     }
-
-    // --- MEMORY ---
-    else if (match(['remember ', 'save '])) {
-      const info = cmd.replace(/remember|save/i, '').trim();
-      if (info) {
-        respond(`Committing to neural memory: ${info}`);
-        const saveMemory = async () => {
-          try {
-            const res = await fetch(`${BACKEND_URL}/memory`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ content: info })
-            });
-            const data = await res.json();
-            setMemories(prev => [data, ...prev]);
-            setShowMemory(true);
-          } catch (e) {
-            addLog("Memory Error: Database uplink failed.");
-          }
-        };
-        saveMemory();
-      }
-    } else if (match(['recall', 'show memory', 'what do you know'])) {
-      respond("Accessing neural memory core.");
+    else if (match('restart|reboot')) {
+      respond("Rebooting systems.");
+      setSystemState('restarting');
+      setTimeout(() => fetch(`${BACKEND_URL}/system/restart`, { method: 'POST' }), 3000);
+    }
+    // Hardware
+    else if (match('volume (up|down|increase|decrease)')) {
+      const dir = match('up|increase') ? 'up' : 'down';
+      respond(`Adjusting volume ${dir}.`);
+      fetch(`${BACKEND_URL}/hardware/volume/${dir}`, { method: 'POST' });
+    }
+    else if (match('brightness (up|down|increase|decrease)')) {
+      const level = match('up|increase') ? 100 : 20;
+      respond("Adjusting optical levels.");
+      fetch(`${BACKEND_URL}/hardware/brightness?level=${level}`, { method: 'POST' });
+    }
+    else if (match('mute|unmute')) {
+      respond("Toggling audio state.");
+      fetch(`${BACKEND_URL}/hardware/volume/mute`, { method: 'POST' });
+    }
+    // Memory
+    else if (match('(remember|save) (.*)')) {
+      const info = cleanCmd.match(/(?:remember|save) (.*)/i)[2];
+      respond(`Storing in neural core: ${info}`);
+      fetch(`${BACKEND_URL}/memory`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: info })
+      }).then(r => r.json()).then(data => {
+        setMemories(prev => [data, ...prev]);
+        setShowMemory(true);
+      });
+    }
+    else if (match('recall|memory|what do you know')) {
+      respond("Accessing memory core.");
       setShowMemory(true);
     }
-
-    // --- UTILS & GREETINGS ---
-    else if (match(['time'])) {
-      respond(`The current time is ${new Date().toLocaleTimeString()}.`);
-    } else if (match(['date'])) {
-      respond(`Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`);
-    } else if (match(['hello', 'hi', 'hey', 'jarvis'])) {
-      respond("At your service, sir. Systems are nominal.");
-    } else if (match(['who are you'])) {
-      respond("I am JARVIS. A Kinetic Neural Interface assistant.");
-    } else if (match(['thank'])) {
-      respond("The pleasure is mine, sir.");
+    // Status
+    else if (match('status|how are you|report')) {
+      respond(`All systems nominal. CPU at ${stats.cpu}%, Battery at ${stats.battery}%. Temperature stable.`);
     }
-
-    // --- FALLBACK ---
+    // Fallback
     else {
-      respond(`I've found something for "${cmd}".`, `https://www.google.com/search?q=${encodeURIComponent(cmd)}`);
+      if (cleanCmd.length > 3) {
+        respond(`I found this for ${cleanCmd}.`, `https://www.google.com/search?q=${encodeURIComponent(cleanCmd)}`);
+      }
     }
   };
 
@@ -908,7 +937,11 @@ export default function App() {
             <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
             <ParticleField count={dreamMode ? 4000 : 2000} dreamMode={dreamMode} />
             <FloatingGrid dreamMode={dreamMode} />
-            <AIOrb active={isListening} dreamMode={dreamMode} isSpeaking={isSpeaking} />
+            <AIOrb 
+              active={isListening && interimText.length > 0} 
+              dreamMode={dreamMode} 
+              isSpeaking={isSpeaking} 
+            />
             
             <ambientLight intensity={0.5} />
             <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} intensity={2} />
