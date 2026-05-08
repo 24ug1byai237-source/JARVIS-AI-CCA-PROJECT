@@ -413,74 +413,147 @@ const MemoryBank = ({ memories, isVisible, onClose }) => {
   );
 };
 
-const StartupSequence = ({ onComplete }) => {
-  const [percent, setPercent] = useState(0);
+const TranscriptionOverlay = ({ text, active }) => (
+  <AnimatePresence>
+    {active && text && (
+      <motion.div 
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0 }}
+        className="fixed bottom-32 left-1/2 -translate-x-1/2 z-[200] pointer-events-none"
+      >
+        <div className="glass-panel px-6 py-2 border-cyan-500/50 flex items-center gap-3">
+          <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse" />
+          <p className="text-sm font-mono text-cyan-400 uppercase tracking-widest italic opacity-80">
+            {text}...
+          </p>
+        </div>
+      </motion.div>
+    )}
+  </AnimatePresence>
+);
+
+const HardwareMonitor = () => {
+  const [stats, setStats] = useState({ cpu: 45, gpu: 32, ram: 58, temp: 42 });
 
   useEffect(() => {
     const interval = setInterval(() => {
+      setStats({
+        cpu: Math.floor(30 + Math.random() * 40),
+        gpu: Math.floor(20 + Math.random() * 50),
+        ram: Math.floor(50 + Math.random() * 10),
+        temp: Math.floor(38 + Math.random() * 12)
+      });
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const Bar = ({ label, val, color }) => (
+    <div className="space-y-1">
+      <div className="flex justify-between text-[8px] font-mono">
+        <span className="text-white/40">{label}</span>
+        <span style={{ color }}>{val}%</span>
+      </div>
+      <div className="w-full bg-white/5 h-0.5 rounded-full overflow-hidden">
+        <motion.div 
+          animate={{ width: `${val}%` }}
+          className="h-full"
+          style={{ backgroundColor: color, boxShadow: `0 0 10px ${color}` }}
+        />
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+      <Bar label="NEURAL-CPU" val={stats.cpu} color="#22d3ee" />
+      <Bar label="CORE-TEMP" val={stats.temp} color="#f43f5e" />
+      <Bar label="VISION-GPU" val={stats.gpu} color="#a78bfa" />
+      <Bar label="BUFFER-RAM" val={stats.ram} color="#10b981" />
+    </div>
+  );
+};
+
+const StartupSequence = ({ onComplete }) => {
+  const [percent, setPercent] = useState(0);
+  const [log, setLog] = useState("Initializing Core...");
+
+  useEffect(() => {
+    const sequence = [
+      { p: 10, m: "PROBING HARDWARE..." },
+      { p: 25, m: "CPU: QUANTUM-7 DETECTED" },
+      { p: 40, m: "GPU: NEURAL-RTX ACTIVE" },
+      { p: 60, m: "MEMORY BANK: CONNECTED" },
+      { p: 85, m: "BYPASSING FIREWALLS..." },
+      { p: 100, m: "SYSTEM STABLE" }
+    ];
+
+    let currentStep = 0;
+    const interval = setInterval(() => {
       setPercent(prev => {
-        if (prev >= 100) {
+        const next = prev + 1;
+        if (currentStep < sequence.length && next >= sequence[currentStep].p) {
+          setLog(sequence[currentStep].m);
+          currentStep++;
+        }
+        if (next >= 100) {
           clearInterval(interval);
-          setTimeout(onComplete, 500);
+          setTimeout(onComplete, 800);
           return 100;
         }
-        return prev + 1;
+        return next;
       });
-    }, 30);
+    }, 40);
     return () => clearInterval(interval);
   }, [onComplete]);
 
   return (
     <motion.div 
-      exit={{ opacity: 0, filter: "blur(20px)" }}
+      exit={{ opacity: 0, scale: 1.1, filter: "blur(20px)" }}
       className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center overflow-hidden"
     >
-      {/* Background Code Rain Effect */}
-      <div className="absolute inset-0 opacity-20 pointer-events-none">
-        {[...Array(10)].map((_, i) => (
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(6,182,212,0.1)_0%,transparent_70%)]" />
+      
+      <div className="relative w-96 h-96 flex flex-col items-center justify-center">
+        {/* Animated Rings */}
+        {[...Array(3)].map((_, i) => (
           <motion.div
             key={i}
-            initial={{ y: -500 }}
-            animate={{ y: 1000 }}
-            transition={{ duration: 2 + Math.random() * 3, repeat: Infinity, ease: "linear", delay: Math.random() * 2 }}
-            className="text-[8px] font-mono text-cyan-500 whitespace-nowrap"
-            style={{ left: `${i * 10}%` }}
-          >
-            {Array(50).fill(0).map(() => Math.random().toString(36).substring(2, 4)).join(' ')}
-          </motion.div>
+            animate={{ rotate: i % 2 === 0 ? 360 : -360, scale: [1, 1.05, 1] }}
+            transition={{ rotate: { duration: 10 + i * 5, repeat: Infinity, ease: "linear" }, scale: { duration: 2, repeat: Infinity } }}
+            className="absolute border border-cyan-500/20 rounded-full"
+            style={{ inset: i * 20 }}
+          />
         ))}
-      </div>
 
-      <div className="relative w-80 h-80 flex items-center justify-center">
-        <motion.div 
-          animate={{ rotate: 360 }}
-          transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
-          className="absolute inset-0 border border-cyan-500/20 rounded-full"
-        />
-        <motion.div 
-          animate={{ rotate: -360 }}
-          transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
-          className="absolute inset-4 border border-violet-500/10 rounded-full border-dashed"
-        />
-        
-        <div className="flex flex-col items-center">
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            className="mb-4"
+        <div className="z-10 flex flex-col items-center">
+          <motion.h1 
+            initial={{ letterSpacing: "1em", opacity: 0 }}
+            animate={{ letterSpacing: "0.2em", opacity: 1 }}
+            className="text-6xl font-black text-cyan-400 neon-text-cyan italic mb-8"
           >
-            <h1 className="text-5xl font-black tracking-[0.2em] text-cyan-400 neon-text-cyan italic">JARVIS</h1>
-          </motion.div>
+            JARVIS
+          </motion.h1>
           
-          <div className="w-48 bg-cyan-900/20 h-1 rounded-full overflow-hidden border border-cyan-500/20">
+          <div className="w-64 h-1 bg-white/5 rounded-full overflow-hidden mb-4">
             <motion.div 
-              className="h-full bg-cyan-400 shadow-[0_0_15px_#22d3ee]" 
+              className="h-full bg-cyan-400 shadow-[0_0_20px_#22d3ee]"
               style={{ width: `${percent}%` }}
             />
           </div>
-          <div className="mt-4 flex flex-col items-center gap-1">
-            <p className="text-[8px] font-mono text-cyan-500 tracking-[0.3em]">NEURAL CORE: {percent}%</p>
-            <p className="text-[6px] font-mono text-cyan-700 uppercase">Verifying system integrity... OK</p>
+          
+          <div className="h-4">
+            <AnimatePresence mode="wait">
+              <motion.p 
+                key={log}
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                className="text-[10px] font-mono text-cyan-500/80 uppercase tracking-[0.5em]"
+              >
+                {log}
+              </motion.p>
+            </AnimatePresence>
           </div>
         </div>
       </div>
@@ -523,6 +596,7 @@ export default function App() {
   const [activeSong, setActiveSong] = useState(null); // Can be ID or name
   const [memories, setMemories] = useState([]);
   const [showMemory, setShowMemory] = useState(false);
+  const [interimText, setInterimText] = useState("");
   const videoRef = useRef(null);
   
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -573,8 +647,8 @@ export default function App() {
     if (!window.webkitSpeechRecognition && !window.SpeechRecognition) return null;
     const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
     const rec = new SpeechRecognition();
-    rec.continuous = false; // Single command per activation
-    rec.interimResults = false;
+    rec.continuous = true; // Stay on for better "JARVIS" feel
+    rec.interimResults = true; // Real-time feedback
     rec.lang = 'en-US';
     return rec;
   }, []);
@@ -583,16 +657,30 @@ export default function App() {
     if (!recognition) return;
 
     recognition.onresult = (event) => {
-      if (isProcessingRef.current) return;
-      const result = event.results[event.results.length - 1];
-      if (!result.isFinal) return;
-      const command = result[0].transcript.toLowerCase().trim();
-      if (command && command !== previousCommandRef.current) {
-        previousCommandRef.current = command;
-        isProcessingRef.current = true;
-        handleVoiceCommand(command);
-        setTimeout(() => { isProcessingRef.current = false; }, 2000);
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          const command = event.results[i][0].transcript.toLowerCase().trim();
+          
+          // Debounce same command
+          if (isProcessingRef.current || command === previousCommandRef.current) return;
+          
+          previousCommandRef.current = command;
+          isProcessingRef.current = true;
+          setInterimText(""); // Clear interim on final
+          
+          addLog(`> ${command.toUpperCase()}`);
+          handleVoiceCommand(command);
+          
+          setTimeout(() => { 
+            isProcessingRef.current = false; 
+            previousCommandRef.current = ''; 
+          }, 3000);
+        } else {
+          interim += event.results[i][0].transcript;
+        }
       }
+      setInterimText(interim);
     };
 
     recognition.onerror = (event) => {
@@ -674,41 +762,43 @@ export default function App() {
     }, url ? 10000 : 5000); // 10 seconds for URLs, 5 seconds for normal speech
   };
 
-  const handleVoiceCommand = (rawCmd) => {
-    let cmd = rawCmd.toLowerCase().trim();
-    addLog(`> ${rawCmd}`);
+  const handleVoiceCommand = (cmd) => {
+    // --- APP & NAVIGATION ---
+    const match = (keys) => keys.some(k => cmd.includes(k));
 
-    // If it's just "Jarvis", respond
-    if (cmd === "jarvis") {
-      respond("Yes, sir? How can I help you?");
-      return;
-    }
-
-    // --- FLEXIBLE COMMAND MATCHING ---
-
-    // 1. App Commands
-    if (cmd.includes('youtube')) {
+    if (match(['youtube'])) {
       respond('Opening YouTube.', 'https://www.youtube.com');
-    } else if (cmd.includes('google')) {
-      respond('Opening Google.', 'https://www.google.com');
-    } else if (cmd.includes('spotify')) {
+    } else if (match(['google', 'search'])) {
+      const query = cmd.split(/google|search/i)[1]?.trim();
+      if (query) {
+        respond(`Searching for ${query}.`, `https://www.google.com/search?q=${encodeURIComponent(query)}`);
+      } else {
+        respond('Opening Google.', 'https://www.google.com');
+      }
+    } else if (match(['spotify'])) {
       respond('Launching Spotify.', 'https://open.spotify.com');
-    } else if (cmd.includes('github')) {
+    } else if (match(['github'])) {
       respond('Accessing GitHub.', 'https://github.com');
-    } else if (cmd.includes('netflix')) {
-      respond('Opening Netflix.', 'https://www.netflix.com');
-    } else if (cmd.includes('chatgpt') || cmd.includes('openai')) {
-      respond('Connecting to AI Neural Link.', 'https://chat.openai.com');
-    } else if (cmd.includes('calculator')) {
-      respond('Opening Calculator.', 'https://www.google.com/search?q=calculator');
-    } else if (cmd.includes('instagram')) {
-      respond('Opening Instagram.', 'https://www.instagram.com');
-    } else if (cmd.includes('whatsapp')) {
-      respond('Opening WhatsApp.', 'https://web.whatsapp.com');
+    } else if (match(['whatsapp', 'message', 'text'])) {
+      // Improved WhatsApp Logic
+      const contactName = Object.keys(CONTACTS).find(name => cmd.includes(name));
+      if (contactName) {
+        const phone = CONTACTS[contactName].replace('+', '');
+        const messageParts = cmd.split(contactName);
+        const text = messageParts.length > 1 ? messageParts[1].replace(/saying|say|message/i, '').trim() : '';
+        
+        if (text) {
+          respond(`Preparing message to ${contactName}: "${text}"`, `https://wa.me/${phone}?text=${encodeURIComponent(text)}`);
+        } else {
+          respond(`Opening chat with ${contactName}.`, `https://wa.me/${phone}`);
+        }
+      } else {
+        respond("Contact not found in neural database. Opening WhatsApp Web.", "https://web.whatsapp.com");
+      }
     }
 
-    // 2. Play Music/Videos
-    else if (cmd.includes('play ')) {
+    // --- MEDIA CONTROL ---
+    else if (match(['play '])) {
       const songName = cmd.split('play ')[1].trim();
       if (songName) {
         const upperSong = songName.toUpperCase();
@@ -719,105 +809,44 @@ export default function App() {
         setActiveSong(trackId || songName);
         setShowVideo(true);
         
-        if (trackId) {
-          respond(`Initializing direct neural uplink for ${songName}.`, `https://www.youtube.com/watch?v=${trackId}`);
-        } else {
-          respond(`Searching and playing ${songName} on YouTube.`, `https://www.youtube.com/results?search_query=${encodeURIComponent(songName)}`);
-        }
+        respond(`Initializing direct neural uplink for ${songName}. Auto-play engaged.`);
+        // Note: No second tab open for music to ensure holographic player has priority
       }
-    }
-
-    // 3. Movies
-    else if (cmd.includes('watch ') || cmd.includes('movie ')) {
-      const movie = (cmd.includes('watch ') ? cmd.split('watch ')[1] : cmd.split('movie ')[1]).trim();
-      if (movie) {
-        respond(`Searching for movie: ${movie}.`, `https://www.youtube.com/results?search_query=${encodeURIComponent(movie + ' movie')}`);
-      }
-    }
-
-    // 4. General Search
-    else if (cmd.includes('search ') || cmd.includes('google ')) {
-      const query = (cmd.includes('search ') ? cmd.split('search ')[1] : cmd.split('google ')[1]).trim();
-      if (query) {
-        respond(`Searching for ${query}.`, `https://www.google.com/search?q=${encodeURIComponent(query)}`);
-      }
-    }
-
-    // 5. OPEN ANY WEBSITE — "open [website]"
-    else if (cmd.startsWith('open ')) {
-      const site = cmd.replace('open ', '').trim();
-      if (site) {
-        const url = site.includes('.') ? `https://${site}` : `https://www.google.com/search?q=${encodeURIComponent(site)}`;
-        respond(`Opening ${site}.`, url);
-      }
-    }
-
-    // 6. WhatsApp Messaging
-    else if (cmd.includes('message') || cmd.includes('text') || cmd.includes('whatsapp')) {
-      const contactName = Object.keys(CONTACTS).find(name => cmd.includes(name));
-      if (contactName) {
-        const phone = CONTACTS[contactName].replace('+', ''); 
-        respond(`Opening WhatsApp Desktop to message ${contactName}.`, `whatsapp://send?phone=${phone}`);
-      } else {
-        respond("Contact not found in neural database.");
-      }
-    }
-
-    // 7. System Commands
-    else if (cmd.includes('activate dream mode')) {
-      respond('Dream Mode sequence initiated.');
-      setDreamMode(true);
-    } else if (cmd.includes('deactivate dream mode') || cmd.includes('exit dream mode') || cmd.includes('normal mode')) {
-      respond('Exiting Dream Mode.');
-      setDreamMode(false);
-    } else if (cmd.includes('pause music') || cmd.includes('stop music') || cmd.includes('stop')) {
-      respond('Music transmission terminated.');
+    } else if (match(['pause music', 'stop music', 'stop'])) {
+      respond('Terminating all audio transmissions.');
       setIsPlaying(false);
       setShowVideo(false);
       setActiveSong(null);
-    } else if (cmd.includes('shutdown')) {
-      respond("Initiating full system hardware shutdown. Goodbye, sir.");
+    }
+
+    // --- SYSTEM & HARDWARE ---
+    else if (match(['shutdown', 'turn off laptop'])) {
+      respond("System shutdown sequence initiated. All hardware components will power down in 5 seconds. Goodbye, sir.");
       setSystemState('shutdown');
       setTimeout(async () => {
         try {
           await fetch(`${BACKEND_URL}/system/shutdown`, { method: 'POST' });
         } catch (e) {
-          addLog("System Error: Local backend unreachable for hardware control.");
+          addLog("System Error: Local hardware controller not responding.");
         }
-      }, 3000);
-    } else if (cmd.includes('restart')) {
-      respond("Rebooting JARVIS core systems and hardware.");
+      }, 5000);
+    } else if (match(['restart', 'reboot'])) {
+      respond("Rebooting JARVIS core and physical hardware.");
       setSystemState('restarting');
       setTimeout(async () => {
         try {
           await fetch(`${BACKEND_URL}/system/restart`, { method: 'POST' });
         } catch (e) {
-          addLog("System Error: Local backend unreachable for hardware control.");
+          addLog("System Error: Local hardware controller not responding.");
         }
-      }, 3000);
+      }, 5000);
     }
 
-    // 8. TIME & DATE
-    else if (cmd.includes('time')) {
-      respond(`The current time is ${new Date().toLocaleTimeString()}.`);
-    } else if (cmd.includes('date')) {
-      respond(`Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`);
-    }
-
-    // 9. WHO ARE YOU / GREETINGS
-    else if (cmd.includes('who are you') || cmd.includes('your name')) {
-      respond("I am JARVIS. Your personal AI assistant, sir.");
-    } else if (cmd.includes('hello') || cmd.includes('hi') || cmd.includes('hey')) {
-      respond("Hello sir. How may I assist you today?");
-    } else if (cmd.includes('thank')) {
-      respond("You're welcome, sir. Always at your service.");
-    }
-
-    // 11. NEURAL MEMORY
-    else if (cmd.includes('remember ') || cmd.includes('save ')) {
-      const info = cmd.replace('remember ', '').replace('save ', '').trim();
+    // --- MEMORY ---
+    else if (match(['remember ', 'save '])) {
+      const info = cmd.replace(/remember|save/i, '').trim();
       if (info) {
-        respond(`Stored in neural memory: ${info}`);
+        respond(`Committing to neural memory: ${info}`);
         const saveMemory = async () => {
           try {
             const res = await fetch(`${BACKEND_URL}/memory`, {
@@ -829,22 +858,32 @@ export default function App() {
             setMemories(prev => [data, ...prev]);
             setShowMemory(true);
           } catch (e) {
-            addLog("Memory Error: Failed to commit to database.");
+            addLog("Memory Error: Database uplink failed.");
           }
         };
         saveMemory();
       }
-    } else if (cmd.includes('recall') || cmd.includes('show memory') || cmd.includes('what do you know')) {
+    } else if (match(['recall', 'show memory', 'what do you know'])) {
       respond("Accessing neural memory core.");
       setShowMemory(true);
-    } else if (cmd.includes('close memory') || cmd.includes('hide memory')) {
-      setShowMemory(false);
     }
 
-    // 10. FALLBACK — Search anything else on Google
+    // --- UTILS & GREETINGS ---
+    else if (match(['time'])) {
+      respond(`The current time is ${new Date().toLocaleTimeString()}.`);
+    } else if (match(['date'])) {
+      respond(`Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`);
+    } else if (match(['hello', 'hi', 'hey', 'jarvis'])) {
+      respond("At your service, sir. Systems are nominal.");
+    } else if (match(['who are you'])) {
+      respond("I am JARVIS. A Kinetic Neural Interface assistant.");
+    } else if (match(['thank'])) {
+      respond("The pleasure is mine, sir.");
+    }
+
+    // --- FALLBACK ---
     else {
-      const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(cmd)}`;
-      respond(`Searching for: ${cmd}.`, searchUrl);
+      respond(`I've found something for "${cmd}".`, `https://www.google.com/search?q=${encodeURIComponent(cmd)}`);
     }
   };
 
@@ -989,18 +1028,21 @@ export default function App() {
             </div>
 
             {/* Center: Quick Links / Apps */}
-            <div className="col-span-6 flex flex-wrap justify-center gap-4 pb-4">
-              {Object.keys(COMMANDS).map((key) => (
-                <motion.button
-                  key={key}
-                  whileHover={{ y: -5, scale: 1.05 }}
-                  onClick={() => handleVoiceCommand(`open ${key.toLowerCase()}`)}
-                  className="btn-futuristic flex flex-col items-center gap-2 min-w-[100px]"
-                >
-                  <span className="text-[10px] font-bold text-cyan-400 tracking-widest">{key}</span>
-                  <div className="w-1 h-1 bg-cyan-400 rounded-full" />
-                </motion.button>
-              ))}
+            <div className="col-span-6 flex flex-col items-center gap-6 pb-4">
+              <HardwareMonitor />
+              <div className="flex flex-wrap justify-center gap-4">
+                {Object.keys(COMMANDS).map((key) => (
+                  <motion.button
+                    key={key}
+                    whileHover={{ y: -5, scale: 1.05 }}
+                    onClick={() => handleVoiceCommand(`open ${key.toLowerCase()}`)}
+                    className="btn-futuristic flex flex-col items-center gap-2 min-w-[100px]"
+                  >
+                    <span className="text-[10px] font-bold text-cyan-400 tracking-widest">{key}</span>
+                    <div className="w-1 h-1 bg-cyan-400 rounded-full" />
+                  </motion.button>
+                ))}
+              </div>
             </div>
 
             {/* Right: Status & Music */}
@@ -1073,6 +1115,8 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+
+      <TranscriptionOverlay text={interimText} active={isListening} />
 
       {/* Scanning Effect Overlay */}
       <div className="scanline" />
