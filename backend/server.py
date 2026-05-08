@@ -10,6 +10,15 @@ from typing import List
 import uuid
 from datetime import datetime, timezone
 
+# --- Models ---
+class MemoryEntry(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    content: str
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class MemoryCreate(BaseModel):
+    content: str
+
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -79,6 +88,22 @@ async def system_restart():
     # For Windows: shutdown /r /t 5
     os.system("shutdown /r /t 5")
     return {"status": "restart_initiated"}
+
+@api_router.post("/memory", response_model=MemoryEntry)
+async def add_memory(input: MemoryCreate):
+    entry = MemoryEntry(content=input.content)
+    doc = entry.model_dump()
+    doc['timestamp'] = doc['timestamp'].isoformat()
+    await db.memories.insert_one(doc)
+    return entry
+
+@api_router.get("/memory", response_model=List[MemoryEntry])
+async def get_memories():
+    memories = await db.memories.find({}, {"_id": 0}).sort("timestamp", -1).to_list(50)
+    for m in memories:
+        if isinstance(m['timestamp'], str):
+            m['timestamp'] = datetime.fromisoformat(m['timestamp'])
+    return memories
 
 # Include the router in the main app
 app.include_router(api_router)

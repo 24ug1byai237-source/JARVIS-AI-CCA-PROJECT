@@ -371,6 +371,48 @@ const HolographicVideo = ({ song, isVisible, onClose }) => {
   );
 };
 
+const MemoryBank = ({ memories, isVisible, onClose }) => {
+  if (!isVisible) return null;
+  return (
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.9, x: -100 }}
+      animate={{ opacity: 1, scale: 1, x: 0 }}
+      exit={{ opacity: 0, scale: 0.9, x: -100 }}
+      className="fixed top-24 left-8 w-80 z-50 perspective-1000"
+    >
+      <div className="glass-panel p-4 neon-border-cyan transform-gpu rotate-y-[10deg]">
+        <div className="flex justify-between items-center mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-violet-400 rounded-full animate-ping" />
+            <span className="text-[10px] font-black text-violet-400 uppercase tracking-widest">Neural Memory Core</span>
+          </div>
+          <button onClick={onClose} className="text-cyan-400">×</button>
+        </div>
+        <div className="space-y-3 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
+          {memories.length === 0 ? (
+            <p className="text-[10px] text-cyan-700 italic">Memory core is empty, sir.</p>
+          ) : (
+            memories.map((m, i) => (
+              <motion.div 
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.1 }}
+                key={m.id || i} 
+                className="p-2 border-l-2 border-violet-500/30 bg-violet-500/5 rounded-r-lg"
+              >
+                <p className="text-xs text-white leading-relaxed">{m.content}</p>
+                <p className="text-[8px] text-violet-700 mt-1 font-mono uppercase">
+                  Stored: {new Date(m.timestamp).toLocaleString()}
+                </p>
+              </motion.div>
+            ))
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
 const StartupSequence = ({ onComplete }) => {
   const [percent, setPercent] = useState(0);
 
@@ -479,10 +521,25 @@ export default function App() {
   const [isLocked, setIsLocked] = useState(true);
   const [showVideo, setShowVideo] = useState(false);
   const [activeSong, setActiveSong] = useState(null); // Can be ID or name
+  const [memories, setMemories] = useState([]);
+  const [showMemory, setShowMemory] = useState(false);
   const videoRef = useRef(null);
   
   const [isSpeaking, setIsSpeaking] = useState(false);
   
+  useEffect(() => {
+    const fetchMemories = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/memory`);
+        const data = await res.json();
+        setMemories(data);
+      } catch (e) {
+        console.warn("Memory backend unavailable.");
+      }
+    };
+    fetchMemories();
+  }, []);
+
   // Cursor Trail
   const cursorRef = useRef(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
@@ -756,6 +813,34 @@ export default function App() {
       respond("You're welcome, sir. Always at your service.");
     }
 
+    // 11. NEURAL MEMORY
+    else if (cmd.includes('remember ') || cmd.includes('save ')) {
+      const info = cmd.replace('remember ', '').replace('save ', '').trim();
+      if (info) {
+        respond(`Stored in neural memory: ${info}`);
+        const saveMemory = async () => {
+          try {
+            const res = await fetch(`${BACKEND_URL}/memory`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ content: info })
+            });
+            const data = await res.json();
+            setMemories(prev => [data, ...prev]);
+            setShowMemory(true);
+          } catch (e) {
+            addLog("Memory Error: Failed to commit to database.");
+          }
+        };
+        saveMemory();
+      }
+    } else if (cmd.includes('recall') || cmd.includes('show memory') || cmd.includes('what do you know')) {
+      respond("Accessing neural memory core.");
+      setShowMemory(true);
+    } else if (cmd.includes('close memory') || cmd.includes('hide memory')) {
+      setShowMemory(false);
+    }
+
     // 10. FALLBACK — Search anything else on Google
     else {
       const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(cmd)}`;
@@ -971,13 +1056,20 @@ export default function App() {
         </div>
       )}
 
-      {/* Holographic Video Projection */}
+      {/* Holographic Projections */}
       <AnimatePresence>
         {showVideo && activeSong && (
           <HolographicVideo 
             song={activeSong} 
             isVisible={showVideo} 
             onClose={() => setShowVideo(false)} 
+          />
+        )}
+        {showMemory && (
+          <MemoryBank 
+            memories={memories} 
+            isVisible={showMemory} 
+            onClose={() => setShowMemory(false)} 
           />
         )}
       </AnimatePresence>
