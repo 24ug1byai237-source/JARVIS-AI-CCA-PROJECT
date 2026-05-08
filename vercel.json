@@ -7,14 +7,7 @@
     },
     {
       "source": "/(.*)",
-      "destination": "/lumina-os/$1"
-    }
-  ],
-  "redirects": [
-    {
-      "source": "/",
-      "destination": "/lumina-os/",
-      "permanent": true
+      "destination": "/index.html"
     }
   ]
 }
